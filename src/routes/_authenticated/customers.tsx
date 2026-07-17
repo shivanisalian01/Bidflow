@@ -7,12 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Search } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useBusiness } from "@/lib/business";
 import { formatDate } from "@/lib/format";
-
 export const Route = createFileRoute("/_authenticated/customers")({
   head: () => ({ meta: [{ title: "Customers — BidFlow" }] }),
   component: CustomersPage,
@@ -36,6 +44,8 @@ function CustomersPage() {
   });
 
   const [open, setOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [form, setForm] = useState({ name: "", company: "", email: "", phone: "", address: "", city: "", notes: "" });
 
   const create = useMutation({
@@ -47,6 +57,7 @@ function CustomersPage() {
       await supabase.from("activities").insert({
         business_id: business.id, kind: "customer_created", message: `Added customer ${data.name}`, ref_type: "customer", ref_id: data.id,
       });
+  
       return data;
     },
     onSuccess: (data) => {
@@ -59,6 +70,26 @@ function CustomersPage() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const removeCustomer = useMutation({
+  mutationFn: async (id: string) => {
+    const { error } = await supabase
+      .from("customers")
+      .delete()
+      .eq("id", id);
+
+    if (error) throw error;
+  },
+
+  onSuccess: () => {
+    qc.invalidateQueries({ queryKey: ["customers"] });
+    qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    toast.success("Customer deleted");
+  },
+
+  onError: (e: any) => {
+    toast.error(e.message);
+  },
+});
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-10 lg:px-10 lg:py-12">
@@ -112,6 +143,7 @@ function CustomersPage() {
                 <th className="px-6 py-3 text-left font-medium">Email</th>
                 <th className="px-6 py-3 text-left font-medium">Phone</th>
                 <th className="px-6 py-3 text-left font-medium">Added</th>
+                <th className="px-6 py-3 text-center font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-sm">
@@ -124,12 +156,59 @@ function CustomersPage() {
                   <td className="px-6 py-4 text-muted-foreground">{c.email ?? "—"}</td>
                   <td className="px-6 py-4 text-muted-foreground">{c.phone ?? "—"}</td>
                   <td className="px-6 py-4 text-muted-foreground">{formatDate(c.created_at)}</td>
+                 <td className="px-6 py-4 text-center">
+  <Button
+  variant="ghost"
+  size="icon"
+  onClick={(e) => {
+    e.stopPropagation();
+    setSelectedCustomer(c);
+    setDeleteOpen(true);
+    
+  }}
+>
+  <Trash2 className="h-4 w-4 text-red-500" />
+</Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Customer</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <strong>{selectedCustomer?.name}</strong>?
+              <br />
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!selectedCustomer) return;
+
+                removeCustomer.mutate(selectedCustomer.id);
+                setDeleteOpen(false);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
