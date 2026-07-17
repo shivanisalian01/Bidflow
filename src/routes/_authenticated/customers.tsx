@@ -84,13 +84,22 @@ function CustomersPage() {
   const removeCustomer = useMutation({
     
   mutationFn: async (id: string) => {
-    const { error } = await supabase
-      .from("customers")
-      .delete()
-      .eq("id", id);
+  // Delete all quotations of this customer
+  const { error: quotationError } = await supabase
+    .from("quotations")
+    .delete()
+    .eq("customer_id", id);
 
-    if (error) throw error;
-  },
+  if (quotationError) throw quotationError;
+
+  // Delete the customer
+  const { error: customerError } = await supabase
+    .from("customers")
+    .delete()
+    .eq("id", id);
+
+  if (customerError) throw customerError;
+},
 
   onSuccess: () => {
     qc.invalidateQueries({ queryKey: ["customers"] });
