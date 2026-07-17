@@ -1,0 +1,4 @@
+ALTER TABLE public.quotation_items
+  ADD COLUMN IF NOT EXISTS name text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS tax_rate numeric NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS discount_rate numeric NOT NULL DEFAULT 0;
