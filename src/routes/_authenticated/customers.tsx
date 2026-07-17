@@ -17,7 +17,7 @@ import {
   DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { useBusiness } from "@/lib/business";
 import { formatDate } from "@/lib/format";
@@ -46,6 +46,17 @@ function CustomersPage() {
   const [open, setOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [editOpen, setEditOpen] = useState(false);
+    const [editForm, setEditForm] = useState({
+     id: "",
+  name: "",
+  company: "",
+  email: "",
+  phone: "",
+  address: "",
+  city: "",
+  notes: "",
+});
   const [form, setForm] = useState({ name: "", company: "", email: "", phone: "", address: "", city: "", notes: "" });
 
   const create = useMutation({
@@ -71,6 +82,7 @@ function CustomersPage() {
     onError: (e: any) => toast.error(e.message),
   });
   const removeCustomer = useMutation({
+    
   mutationFn: async (id: string) => {
     const { error } = await supabase
       .from("customers")
@@ -84,6 +96,28 @@ function CustomersPage() {
     qc.invalidateQueries({ queryKey: ["customers"] });
     qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
     toast.success("Customer deleted");
+  },
+
+  onError: (e: any) => {
+    toast.error(e.message);
+  },
+});
+const updateCustomer = useMutation({
+  mutationFn: async () => {
+    const { id, ...updates } = editForm;
+
+    const { error } = await supabase
+      .from("customers")
+      .update(updates)
+      .eq("id", id);
+
+    if (error) throw error;
+  },
+
+  onSuccess: () => {
+    qc.invalidateQueries({ queryKey: ["customers"] });
+    toast.success("Customer updated");
+    setEditOpen(false);
   },
 
   onError: (e: any) => {
@@ -157,19 +191,43 @@ function CustomersPage() {
                   <td className="px-6 py-4 text-muted-foreground">{c.phone ?? "—"}</td>
                   <td className="px-6 py-4 text-muted-foreground">{formatDate(c.created_at)}</td>
                  <td className="px-6 py-4 text-center">
-  <Button
-  variant="ghost"
-  size="icon"
-  onClick={(e) => {
-    e.stopPropagation();
-    setSelectedCustomer(c);
-    setDeleteOpen(true);
-    
-  }}
->
-  <Trash2 className="h-4 w-4 text-red-500" />
-</Button>
-                  </td>
+  <div className="flex items-center justify-center gap-1">
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={(e) => {
+        e.stopPropagation();
+
+        setEditForm({
+          id: c.id,
+          name: c.name ?? "",
+          company: c.company ?? "",
+          email: c.email ?? "",
+          phone: c.phone ?? "",
+          address: c.address ?? "",
+          city: c.city ?? "",
+          notes: c.notes ?? "",
+        });
+
+        setEditOpen(true);
+      }}
+    >
+      <Pencil className="h-4 w-4 text-blue-500" />
+    </Button>
+
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelectedCustomer(c);
+        setDeleteOpen(true);
+      }}
+    >
+      <Trash2 className="h-4 w-4 text-red-500" />
+    </Button>
+  </div>
+</td>
                 </tr>
               ))}
             </tbody>
@@ -207,7 +265,110 @@ function CustomersPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog><Dialog open={editOpen} onOpenChange={setEditOpen}>
+  <DialogContent className="max-w-lg">
+    <DialogHeader>
+      <DialogTitle className="font-display">Edit Customer</DialogTitle>
+      <DialogDescription>
+        Update customer information.
+      </DialogDescription>
+    </DialogHeader>
+
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        updateCustomer.mutate();
+      }}
+      className="grid gap-4 sm:grid-cols-2"
+    >
+      <div className="sm:col-span-2">
+        <Label>Name *</Label>
+        <Input
+          value={editForm.name}
+          onChange={(e) =>
+            setEditForm({ ...editForm, name: e.target.value })
+          }
+          required
+        />
+      </div>
+
+      <div>
+        <Label>Company</Label>
+        <Input
+          value={editForm.company}
+          onChange={(e) =>
+            setEditForm({ ...editForm, company: e.target.value })
+          }
+        />
+      </div>
+
+      <div>
+        <Label>Email</Label>
+        <Input
+          value={editForm.email}
+          onChange={(e) =>
+            setEditForm({ ...editForm, email: e.target.value })
+          }
+        />
+      </div>
+
+      <div>
+        <Label>Phone</Label>
+        <Input
+          value={editForm.phone}
+          onChange={(e) =>
+            setEditForm({ ...editForm, phone: e.target.value })
+          }
+        />
+      </div>
+
+      <div>
+        <Label>City</Label>
+        <Input
+          value={editForm.city}
+          onChange={(e) =>
+            setEditForm({ ...editForm, city: e.target.value })
+          }
+        />
+      </div>
+
+      <div className="sm:col-span-2">
+        <Label>Address</Label>
+        <Input
+          value={editForm.address}
+          onChange={(e) =>
+            setEditForm({ ...editForm, address: e.target.value })
+          }
+        />
+      </div>
+
+      <div className="sm:col-span-2">
+        <Label>Notes</Label>
+        <Textarea
+          rows={3}
+          value={editForm.notes}
+          onChange={(e) =>
+            setEditForm({ ...editForm, notes: e.target.value })
+          }
+        />
+      </div>
+
+      <DialogFooter className="sm:col-span-2">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => setEditOpen(false)}
+        >
+          Cancel
+        </Button>
+
+        <Button type="submit" disabled={updateCustomer.isPending}>
+          Save Changes
+        </Button>
+      </DialogFooter>
+    </form>
+  </DialogContent>
+</Dialog>
 
     </div>
   );
