@@ -1,3 +1,4 @@
+import { sendQuotationEmail } from "@/lib/email/sendQuotationEmail";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -13,7 +14,8 @@ import { toast } from "sonner";
 import { Plus, Trash2, Save, Copy, Printer, FileText } from "lucide-react";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useBusiness } from "@/lib/business";
-
+import { useRef } from "react";
+import { generateQuotationPDF } from "@/lib/pdf/generateQuotationPDF";
 type Item = { id?: string; name?: string; description: string; quantity: number; unit_price: number; tax_rate?: number; discount_rate?: number; position: number };
 
 export const Route = createFileRoute("/_authenticated/quotations/$quotationId")({
@@ -47,7 +49,7 @@ function QuotationPage() {
 
   const { data: customers = [] } = useQuery({
     queryKey: ["customers-lite"],
-    queryFn: async () => (await supabase.from("customers").select("id,name,company").order("name")).data ?? [],
+    queryFn: async () => (await supabase.from("customers").select("id,name,company,email").order("name")).data ?? [],
   });
 
   const [form, setForm] = useState({
@@ -62,7 +64,7 @@ function QuotationPage() {
     discount_rate: 0,
   });
   const [items, setItems] = useState<Item[]>([]);
-
+  const printRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (quote) setForm({
       customer_id: quote.customer_id,
@@ -159,7 +161,7 @@ function QuotationPage() {
         await supabase.from("activities").insert({
           business_id: business.id,
           kind: `quotation_${status}`,
-          message: `Quotation ${form.number} marked as ${status}`,
+         message: `Quotation ${form.number} marked as ${status.charAt(0).toUpperCase() + status.slice(1)}`,
           ref_type: "quotation", ref_id: quotationId,
         });
       }
@@ -220,7 +222,19 @@ function QuotationPage() {
   if (!quote) return <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">Loading…</div>;
 
   const customer = customers.find((c) => c.id === form.customer_id);
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
 
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1]);
+    };
+
+    reader.onerror = reject;
+
+    reader.readAsDataURL(blob);
+  });
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 lg:px-10 lg:py-12">
       <div className="no-print">
@@ -245,6 +259,76 @@ function QuotationPage() {
               </SelectContent>
             </Select>
             <Button variant="outline" onClick={() => window.print()}><Printer className="mr-1 h-4 w-4" /> Print / PDF</Button>
+  <Button
+  variant="outline"
+  onClick={async () => {
+    try {
+      const blob = await generateQuotationPDF({
+        business,
+        customer,
+        form,
+        items,
+        totals,
+        currency,
+      });
+
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${form.number}.pdf`;
+      a.click();
+
+      URL.revokeObjectURL(url);
+
+      toast.success("PDF downloaded!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate PDF");
+    }
+  }}
+>
+  📄 Download PDF
+</Button>         
+<Button
+  variant="outline"
+  onClick={async () => {
+    try {
+      if (!customer?.email) {
+        toast.error("Customer email not found");
+        return;
+      }
+
+      const blob = await generateQuotationPDF({
+        business,
+        customer,
+        form,
+        items,
+        totals,
+        currency,
+      });
+
+      const pdfBase64 = await blobToBase64(blob);
+
+      await sendQuotationEmail({
+        data: {
+          customerEmail: customer.email,
+          customerName: customer.name,
+          quotationNumber: form.number,
+          pdfBase64,
+        },
+      });
+      await setStatus.mutateAsync("sent");
+
+      toast.success("Quotation emailed successfully!");
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to send email");
+    }
+  }}
+>
+  📧 Send Email
+</Button>
             <Button variant="outline" onClick={() => duplicate.mutate()}><Copy className="mr-1 h-4 w-4" /> Duplicate</Button>
             <Button onClick={() => save.mutate()} disabled={save.isPending}><Save className="mr-1 h-4 w-4" /> Save</Button>
             <AlertDialog>
@@ -344,7 +428,16 @@ function QuotationPage() {
       </div>
 
       {/* Printable view */}
-      <PrintView business={business} customer={customer} form={form} items={items} totals={totals} currency={currency} />
+      <div ref={printRef}>
+  <PrintView
+    business={business}
+    customer={customer}
+    form={form}
+    items={items}
+    totals={totals}
+    currency={currency}
+  />
+</div>
     </div>
   );
 }
@@ -358,12 +451,36 @@ function PrintView({ business, customer, form, items, totals, currency }: any) {
     <div className="hidden print:block">
       <div className="p-12 text-[13px] text-foreground">
         <div className="flex items-start justify-between border-b border-border pb-8">
-          <div>
-            <div className="font-display text-3xl font-semibold">{business?.name}</div>
-            <div className="mt-2 whitespace-pre-line text-muted-foreground">{business?.address}</div>
-            <div className="text-muted-foreground">{business?.email} · {business?.phone}</div>
-            {business?.gst_number && <div className="text-muted-foreground">GST: {business.gst_number}</div>}
-          </div>
+          
+           <div className="flex items-start gap-4">
+  {business?.logo_url && (
+    <img
+      src={business.logo_url}
+      alt="Company Logo"
+      className="h-16 w-16 rounded-lg object-contain"
+    />
+  )}
+
+  <div>
+    <div className="font-display text-3xl font-semibold">
+      {business?.name}
+    </div>
+
+    <div className="mt-2 whitespace-pre-line text-muted-foreground">
+      {business?.address}
+    </div>
+
+    <div className="text-muted-foreground">
+      {business?.email} · {business?.phone}
+    </div>
+
+    {business?.gst_number && (
+      <div className="text-muted-foreground">
+        GST: {business.gst_number}
+      </div>
+    )}
+  </div>
+</div>
           <div className="text-right">
             <div className="font-display text-2xl font-semibold">Quotation</div>
             <div className="mt-1 text-muted-foreground">{form.number}</div>
